@@ -1,0 +1,339 @@
+#https://www.kaggle.com/datasets/swoyam2609/fresh-and-stale-classification?resource=download-directory
+#https://www.kaggle.com/datasets/moltean/fruits
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+import torch
+from torch import optim
+from torch import nn
+from torch.utils.data import DataLoader, random_split
+from torchmetrics import Accuracy
+from torchmetrics import Precision, Recall, F1Score, ConfusionMatrix
+from tqdm import tqdm
+
+import torchvision
+
+import torch.nn.functional as F
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Subset
+import random
+import numpy as np
+import torch
+
+def set_seed(seed=50):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
+
+#set_seed(50)
+
+train_path = "Dataset/train/"
+test_path = "Dataset/test/"
+#train_path = "rotten-fruits-14/Train/"
+#test_path = "rotten-fruits-14/Test/"
+
+#Wybór urzadzenia, jesli dostepne to gpu, jesli nie, to cpu
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+batch_size = 16
+num_classes = 45
+val_split = 0.2
+num_epochs = 5
+#225 - full
+
+#TRAIN transforms: resize + lekkie augmentacje + normalizacja
+train_transforms = transforms.Compose([
+    #transforms.Resize((100,100)),            # spójny rozmiar dla wszystkich zdjęć
+    #transforms.RandomCrop((100,100)),
+    transforms.RandomResizedCrop(100, scale=(0.92, 1.0)),
+    transforms.RandomRotation(15),           # minimalne obroty dla uodpornienia modelu na orientację
+    #transforms.ColorJitter(brightness=0.12),# drobne różnice w jasności, symuluje różne warunki oświetleniowe
+    transforms.RandomHorizontalFlip(),       # losowe odbicie poziome, ułatwia generalizację
+    transforms.ToTensor(),
+    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+])
+
+#TEST transforms: tylko resize + normalizacja (bez augmentacji)
+test_transforms = transforms.Compose([
+    transforms.Resize((100,100)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+])
+
+dataset_full = datasets.ImageFolder(train_path, transform=None)
+targets = dataset_full.targets
+
+train_idx, val_idx = train_test_split(
+    np.arange(len(targets)),
+    test_size=0.2,
+    shuffle=True,
+    stratify=targets,
+    random_state=42
+)
+
+train_dataset_source = datasets.ImageFolder(train_path, transform=train_transforms)
+val_dataset_source = datasets.ImageFolder(train_path, transform=test_transforms)
+
+train_subset = Subset(train_dataset_source, train_idx)
+val_subset = Subset(val_dataset_source, val_idx)
+
+print(f"Trening: {len(train_subset)} zdjęć")
+print(f"Walidacja: {len(val_subset)} zdjęć")
+
+train_loader = DataLoader(dataset=train_subset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(dataset=val_subset, batch_size=batch_size, shuffle=False)
+
+#train_dataset = datasets.ImageFolder(train_path, transform=train_transforms)
+
+#train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+
+test_dataset  = datasets.ImageFolder(test_path,  transform=test_transforms)
+
+test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+
+print(f"Test: {len(test_dataset)} zdjęć")
+
+def imshow(img):
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    plt.show()
+
+#Pokazanie losowych danych treningowych
+dataiter = iter(train_loader)
+images, labels = next(dataiter)
+print(labels)
+imshow(torchvision.utils.make_grid(images))
+
+class CNN(nn.Module):
+    def __init__(self, in_channels, num_classes):
+        super(CNN, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)  # stabilizacja rozkładu aktywacji
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+
+        #self.conv4 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1)
+        #self.bn2 = nn.BatchNorm2d(64)
+
+        # Policzenie rozmiaru
+        x = torch.randn(1, in_channels, 100, 100)
+        x = self.pool1(F.relu(self.conv1(x)))
+        x = self.pool2(F.relu(self.conv2(x)))
+        x = self.pool3(F.relu(self.conv3(x)))
+        # x = self.pool(F.relu(self.conv4(x)))
+        fc_input_size = x.numel() // x.shape[0]
+
+        self.fc1 = nn.Sequential(
+            nn.Dropout(0.3),                #Wyłączanie losowych neuronów
+            nn.Linear(in_features=fc_input_size, out_features=num_classes)
+        )
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.pool1(x)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.pool2(x)
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = self.pool3(x)
+        x = x.reshape(x.shape[0], -1)
+        x = self.fc1(x)
+        return x
+
+
+
+#Tworzenie modelu i przenoszenie go na wybrane urzadzenie
+model = CNN(in_channels=3, num_classes=num_classes).to(device)
+print(model)
+
+#Definicja funkcji loss
+criterion = nn.CrossEntropyLoss()
+
+#Definicja optymalizatora i przekazanie wszystkich parametrow modelu
+#Aktualizacja wag wedlug gradientu loss; lr = wielkość kroków zmian wag
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
+
+acc_train = Accuracy(task= "multiclass", num_classes=num_classes)
+
+train_losses = []
+val_losses = []
+train_accuracies = []
+val_accuracies = []
+
+for epoch in range(num_epochs):
+    #print("Epoch {}/{}".format(epoch + 1, num_epochs))
+    model.train()
+    running_loss = 0
+    acc_train.reset()
+
+    for batch_index, (data, targets) in enumerate(tqdm(train_loader)):
+        data = data.to(device)
+        targets = targets.to(device)
+        scores = model(data) #Obliczenie predykcji modelu
+        loss = criterion(scores, targets) #Obliczenie loss
+        optimizer.zero_grad() #Zerowanie gradientu z poprzedniego kroku
+        loss.backward() #Wsteczna propagacja bledu, obliczenie gradientu
+        optimizer.step() #Aktualizacja wag modelu wedlug gradientow i optymalizatora
+
+        running_loss += loss.item()
+
+        _, predicted = torch.max(scores.data, 1)
+        acc_train.update(predicted, targets)
+
+    avg_train_loss = running_loss / len(train_loader)
+    train_losses.append(avg_train_loss)
+    epoch_train_acc = acc_train.compute().item()
+    train_accuracies.append(epoch_train_acc)
+
+    # Walidacja
+    model.eval()
+    val_running_loss = 0
+    acc_val = Accuracy(task="multiclass", num_classes=num_classes).to(device)
+
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            val_running_loss += loss.item()
+
+            _, predicted = torch.max(outputs.data, 1)
+            acc_val.update(predicted, labels)
+
+    avg_val_loss = val_running_loss / len(val_loader)
+    val_losses.append(avg_val_loss)
+
+    epoch_val_acc = acc_val.compute().item()
+    val_accuracies.append(epoch_val_acc)
+
+    print(f"Epoch {epoch + 1}: Val Loss={avg_val_loss:.4f}, Val Acc={epoch_val_acc:.4f}")
+    print(f"Epoch {epoch + 1}: Train Loss={avg_train_loss:.4f}, Train Acc={epoch_train_acc:.4f}")
+
+plt.figure(figsize=(15, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(train_losses, label='Training Loss')
+plt.plot(val_losses, label='Validation Loss')
+plt.title('Training vs Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+plt.plot(train_accuracies, label='Training Accuracy')
+plt.plot(val_accuracies, label='Validation Accuracy')
+plt.title('Training vs Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+acc_test = Accuracy(task= "multiclass", num_classes=num_classes) #Accuracy – jaki procent wszystkich próbek został sklasyfikowany poprawnie
+prec_test = Precision(task= "multiclass", num_classes=num_classes, average="macro") #Precision (macro) – średnio dla wszystkich klas: jak często model ma rację, gdy przewidzi daną klasę
+rec_test = Recall(task= "multiclass", num_classes=num_classes, average="macro") #Recall (macro) – średnio dla wszystkich klas: jaki procent rzeczywistych próbek danej klasy został wykryty
+f1_test = F1Score(task= "multiclass", num_classes=num_classes, average="macro") #F1-score (macro) – kompromis między precision i recall, wrażliwy na błędy w klasach rzadkich
+confusion_matrix = ConfusionMatrix(task= "multiclass", num_classes=num_classes) #Confusion Matrix – macierz pokazująca, które klasy są poprawnie rozpoznawane, a które są ze sobą mylone
+total_loss = 0 #Suma wartości funkcji straty na zbiorze testowym (do obliczenia średniego lossu)
+num_batches = 0
+
+model.eval()
+with torch.no_grad():
+    for images, labels in test_loader:
+        images, labels = images.to(device), labels.to(device)
+        outputs = model(images)
+
+        loss = criterion(outputs, labels)
+        total_loss += loss.item()
+        num_batches += 1
+
+        _, predicted = torch.max(outputs.data, 1)
+        acc_test.update(predicted, labels)
+        prec_test.update(predicted, labels)
+        rec_test.update(predicted, labels)
+        f1_test.update(predicted, labels)
+        confusion_matrix.update(predicted, labels)
+
+test_acc = acc_test.compute()
+test_prec = prec_test.compute()
+test_rec = rec_test.compute()
+test_f1 = f1_test.compute()
+confusion_matrix = confusion_matrix.compute()
+avg_loss = total_loss / num_batches
+
+print("Test Loss: {:.6f}".format(avg_loss))
+print(f"Test accuracy: {test_acc}")
+print(f"Test precision: {test_prec}")
+print(f"Test recall: {test_rec}")
+print(f"Test F1: {test_f1}")
+print(f"Confusion matrix: {confusion_matrix}")
+
+
+#Nazwy klas
+class_names = dataset_full.classes
+num_classes = len(class_names)
+
+#Konwersja confusion matrix na CUDA → CPU i na float
+cm = confusion_matrix.cpu().float()
+
+#Confusion matrix w %
+cm_percent = cm / cm.sum(dim=1, keepdim=True)
+
+#Heatmapa confusion matrix w %
+plt.figure(figsize=(14, 12))
+sns.heatmap(
+    cm_percent.numpy(),
+    xticklabels=class_names,
+    yticklabels=class_names,
+    cmap="viridis",
+    annot=False
+)
+plt.title("Confusion Matrix (%)")
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.tight_layout()
+plt.show()
+
+#TOP-10 najczęstszych pomyłek
+errors = []
+
+for true_idx in range(num_classes):
+    for pred_idx in range(num_classes):
+        if true_idx != pred_idx:
+            count = int(cm[true_idx, pred_idx].item())
+            if count > 0:
+                errors.append((count, true_idx, pred_idx))
+
+errors.sort(reverse=True, key=lambda x: x[0])
+
+print("\nTOP 10 najczęstszych pomyłek:\n")
+for i in range(min(10, len(errors))):
+    count, t, p = errors[i]
+    print(f"{i+1}. {class_names[t]} → {class_names[p]} : {count} razy")
+
+
