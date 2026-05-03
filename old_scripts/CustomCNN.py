@@ -38,7 +38,7 @@ def set_seed(seed=50):
 
 #set_seed(50)
 
-data_path = "Dataset-small-perfect/"
+data_path = "../datasets/Dataset-small-perfect/"
 
 #Wybór urzadzenia, jesli dostepne to gpu, jesli nie, to cpu
 device = "cuda" if torch.cuda.is_available() else "cpu"

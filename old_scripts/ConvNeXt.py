@@ -43,7 +43,7 @@ def set_seed(seed=50):
 # set_seed(50)
 
 # ZMIENIONA ŚCIEŻKA NA NOWĄ BAZĘ
-data_path = "MTARSI-2/"
+data_path = "../datasets/MTARSI-2/"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
