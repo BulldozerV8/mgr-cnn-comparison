@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import psutil
 from torch import optim, nn
 import torchvision.datasets as datasets
 from sklearn.model_selection import train_test_split, StratifiedKFold
@@ -135,6 +136,18 @@ class ExperimentRunner:
         """
         start_fold_total = time.time()
 
+        # --- DYNAMICZNY LIMIT PRÓBEK (MULTIPLIKATOR) ---
+        N = len(train_idx)  # Liczba fizycznych zdjęć w tym foldzie
+
+        # Pobieramy mnożnik z configu (domyślnie 1, żeby nic nie zmieniać w 10-klasowych testach)
+        multiplier = self.config.get("samples_multiplier", 1)
+        base_limit = self.config.get("num_samples_per_epoch", 30000)
+
+        # Jeśli masz flagę włączoną, liczysz mnożnik, jeśli nie - zostaje baza 30k
+        if multiplier > 1:
+            self.config["num_samples_per_epoch"] = max(base_limit, int(N * multiplier))
+        # -----------------------------------------------
+
         # 1. Loadery
         data_module = DataManager(self.config)
         train_loader, val_loader, test_loader = data_module.get_fold_loaders(
@@ -152,14 +165,31 @@ class ExperimentRunner:
 
         # 3. Model i Optimizer
         model = CNN(
-            num_classes=num_classes, model_name=self.config["model_name"],
-            pretrained=self.config["pretrained"], head_depth=self.config.get("head_depth", 1)
+            num_classes=num_classes,
+            model_name=self.config["model_name"],
+            pretrained=self.config["pretrained"],
+            head_depth=self.config.get("head_depth", 1),
+            head_width=self.config.get("head_width", 512),
+            head_dropout=self.config.get("head_dropout", 0.3),
+            unfreeze_blocks=self.config.get("unfreeze_blocks", 0),
+            pooling_mode=self.config.get("pooling_mode", "avg")
         ).to(self.config["device"])
 
         criterion = nn.CrossEntropyLoss(label_smoothing=self.config["label_smoothing"])
         params_count = sum(p.numel() for p in model.parameters())
-        optimizer = optim.Adam(model.parameters(), lr=self.config["learning_rate"],
-                               weight_decay=self.config["weight_decay"])
+
+        # W experiment.py (fragment w _run_single_fold)
+        if self.config.get("differential_lr", False):
+            # Grupowanie parametrów: głowica uczy się szybciej, baza wolniej
+            params = [
+                {'params': model.model.features.parameters(), 'lr': self.config["learning_rate"] * 0.1},  # Baza
+                {'params': model.model.classifier.parameters(), 'lr': self.config["learning_rate"]}  # Głowica
+            ]
+        else:
+            params = model.parameters()
+
+        optimizer = optim.Adam(params, lr=self.config["learning_rate"], weight_decay=self.config["weight_decay"])  #
+
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=self.config["scheduler_factor"],
                                                          patience=self.config["scheduler_patience"])
         early_stopping = EarlyStopping(patience=self.config["early_stopping_patience"],
@@ -180,6 +210,8 @@ class ExperimentRunner:
         epoch_durations_sec = []
         vram_mb = 0
         model_path = os.path.join(self.config["save_dir"], f"model_weights_fold_{fold_num}.pth")
+        epoch_ram_logs = []
+        epoch_cpu_logs = []
 
         if not self.config.get("robustness_mode", False):
             for epoch in range(self.config["num_epochs"]):
@@ -200,11 +232,24 @@ class ExperimentRunner:
                 vram_mb = torch.cuda.max_memory_allocated(self.config["device"]) / (1024 ** 2) if "cuda" in \
                                                                                                   self.config[
                                                                                                       "device"] else 0
+                process = psutil.Process(os.getpid())
+                ram_mb = process.memory_info().rss / (1024 ** 2)  # Zużycie RAM przez proces w MB
+                cpu_usage = psutil.cpu_percent()  # Procentowe obciążenie CPU
+                epoch_ram_logs.append(ram_mb)
+                epoch_cpu_logs.append(cpu_usage)
 
                 logger.log(self.config, {
-                    "fold": fold_num, "epoch": epoch + 1, "best_epoch": early_stopping.best_epoch,
-                    "train_loss": t_loss, "train_acc": t_acc,
-                    "val_loss": v_loss, "val_acc": v_acc, "vram_mb": vram_mb, "params_count": params_count,
+                    "fold": fold_num,
+                    "epoch": epoch + 1,
+                    "best_epoch": early_stopping.best_epoch,
+                    "train_loss": t_loss,
+                    "train_acc": t_acc,
+                    "val_loss": v_loss,
+                    "val_acc": v_acc,
+                    "ram_mb": ram_mb,
+                    "cpu_usage": cpu_usage,
+                    "vram_mb": vram_mb,
+                    "params_count": params_count,
                     "train_time_sec": ep_time
                 })
 
@@ -233,7 +278,8 @@ class ExperimentRunner:
         acc = self._evaluate_and_log_fold(
             model, test_loader, criterion, num_classes, class_names, fold_num,
             train_losses, val_losses, train_accs, val_accs, vram_mb, params_count,
-            epoch_durations_sec, early_stopping, model_path, start_fold_total, logger
+            epoch_durations_sec, early_stopping, model_path, start_fold_total, logger,
+            epoch_ram_logs, epoch_cpu_logs
         )
 
         # Twarde czyszczenie pamięci zapobiegające wyciekom VRAM między foldami (OOM prevention)
@@ -245,7 +291,8 @@ class ExperimentRunner:
 
     def _evaluate_and_log_fold(self, model, test_loader, criterion, num_classes, class_names, fold_num,
                                train_losses, val_losses, train_accs, val_accs, vram_mb, params_count,
-                               epoch_durations_sec, early_stopping, model_path, start_fold_total, logger):
+                               epoch_durations_sec, early_stopping, model_path, start_fold_total, logger,
+                               epoch_ram_logs, epoch_cpu_logs):
         """
         Zamyka cykl życia folda: generuje wykresy, oblicza metryki testowe,
         wykonuje wiarygodny profil wydajności inferencji i archiwizuje logi.
@@ -285,11 +332,17 @@ class ExperimentRunner:
         if self.config.get("use_gradcam", False):
             self._handle_explainability(model, test_metrics, fold_num, class_names)
 
+        process = psutil.Process(os.getpid())
+        ram_mb = process.memory_info().rss / (1024 ** 2)
+        cpu_usage = psutil.cpu_percent()
+
         # 7. Summary log
         logger.log(self.config, {
             "fold": fold_num, "best_epoch": early_stopping.best_epoch,
             "test_acc": test_metrics['acc'], "test_prec": test_metrics['prec'],
             "test_rec": test_metrics['rec'], "test_f1": test_metrics['f1'],
+            "ram_mb": max(epoch_ram_logs) if epoch_ram_logs else 0,   # Peak
+            "cpu_usage": np.mean(epoch_cpu_logs) if epoch_cpu_logs else 0, # Average
             "vram_mb": vram_mb, "params_count": params_count, "model_size_mb": model_size_mb,
             "inference_ms": inf_ms, "train_time_sec": sum(epoch_durations_sec),
             "total_fold_time_sec": time.time() - start_fold_total

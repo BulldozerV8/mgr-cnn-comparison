@@ -2,48 +2,54 @@ import torch
 
 CONFIG = {
         # === PODSTAWOWA KONFIGURACJA TESTU ===
-        "test_name": "Test_dzialania_po_upiekszaniu_1",  # Nazwa folderu z wynikami w folderze results
-        "dataset_tag": "Zbliska_20",  # Etykieta identyfikująca zbiór danych w raportach
+        "test_name": "FINAL_Ptaki_448px_CV5",  # Nazwa folderu z wynikami w folderze results
+        "dataset_tag": "CUB-2",  # Etykieta identyfikująca zbiór danych w raportach
         "aspect_ratio_mode": "SquarePad",  # Metoda dopasowania proporcji: "SquarePad", "Stretch" lub "Crop"
 
-        # --- Sekcja modelu ---
-        "unfreeze_blocks": 1,        # 0 = tylko głowica, 1 = ostatni blok + głowica, itd.
-        "head_dropout": 0.3,         # Intensywność Dropoutu w głowicy (0.1 - 0.5)
-        "head_depth": 1,  # Głębokość głowicy klasyfikującej: 1 = standard, 2-3 = dodatkowe warstwy FC
-        "head_width": 512,  # Liczba neuronów w dodatkowych warstwach głowicy
+        # --- Konfiguracja Architektury Modelu ---
+        "model_name": "efficientnet_b0",
+        "pretrained": True,     # Transfer Learning: True = wczytaj wagi wyuczone na zbiorze ImageNet
+        "img_size": 448,        # Rozdzielczość wejściowa obrazu (EfficientNet-B0 standardowo 224x224)
+
+        # --- Strategia Fine-tuningu ---
+        "unfreeze_blocks": 3,        # 0 = tylko głowica, 1 = ostatni blok + głowica, itd.
+        "head_dropout": 0.2,         # Intensywność Dropoutu w głowicy (0.1 - 0.5)
+        "head_depth": 2,  # Głębokość głowicy klasyfikującej: 1 = standard, 2-3 = dodatkowe warstwy FC
+        "head_width": 256,  # Liczba neuronów w dodatkowych warstwach głowicy
+        "pooling_mode": "avg",       # Tryb agregacji cech: "avg" (średnia) lub "max" (maksimum)
+        "differential_lr": False,    # True = mniejszy LR dla bazy, większy dla głowicy
 
         # --- DANE I PODZIAŁY ---
-        "data_path": "datasets/Dataset-small/",
+        "data_path": "datasets/CUB-2/",
         "results_path": "results", # Folder bazowy dla wszystkich eksperymentów
         "save_dir": "results",    # Lokalizacja zapisu wag (Runner i tak stworzy podfolder testu)
         "aug_mode": "standard", # Tryb augmentacji: "standard" lub "weather" (efekty pogodowe)
         "weather_prob": 0.5,    # Prawdopodobieństwo wystąpienia efektu pogodowego (dla trybu weather)
         "test_size": 0.15,      # Odsetek danych wydzielony jako stały zbiór testowy (hold-out)
         "val_size": 0.20,       # Odsetek danych do walidacji (używane tylko gdy use_cv = False)
-        "use_cv": False,        # Przełącznik: True = 5-fold Cross-Validation, False = pojedynczy trening
+        "use_cv": True,        # Przełącznik: True = 5-fold Cross-Validation, False = pojedynczy trening
         "num_folds": 5,         # Liczba podziałów (foldów) dla walidacji krzyżowej
-        "use_seed": False,      # Czy wymusić stałe ziarno losowości dla powtarzalności wyników
+        "use_seed": True,      # Czy wymusić stałe ziarno losowości dla powtarzalności wyników
         "seed": 50,             # Wartość ziarna losowości
 
         # --- PARAMETRY TECHNICZNE ---
-        "img_size": 224,        # Rozdzielczość wejściowa obrazu (EfficientNet-B0 standardowo 224x224)
-        "batch_size": 64,       # Liczba próbek przetwarzanych naraz
+        "batch_size": 128,       # Liczba próbek przetwarzanych naraz
         "num_workers": 4,       # Liczba procesów procesora do ładowania danych (bezpieczna wartość dla Windows)
-        "model_name": "efficientnet_b0",
-        "pretrained": True,     # Transfer Learning: True = wczytaj wagi wyuczone na zbiorze ImageNet
+
 
         # --- PARAMETRY UCZENIA (HIPERPARAMETRY) ---
-        "num_epochs": 3,        # Maksymalna liczba epok (pełnych przejść przez zbiór danych)
+        "num_epochs": 20,        # Maksymalna liczba epok (pełnych przejść przez zbiór danych)
         "num_samples_per_epoch": 30000,  # Liczba zdjęć na epokę (wymuszone przez Oversampling)
-        "learning_rate": 0.0001,
-        "weight_decay": 1e-4,   # Siła regularyzacji L2 (zapobiega zbyt dużym wagom modelu)
+        "samples_multiplier": 1, #max(30000, N * 1)
+        "learning_rate": 0.0005,
+        "weight_decay": 0.0001,   # Siła regularyzacji L2 (zapobiega zbyt dużym wagom modelu)
         "label_smoothing": 0.1, # Wygładzanie etykiet (poprawia generalizację, zapobiega pewności siebie modelu)
 
         # --- EARLY STOPPING I SCHEDULER ---
-        "early_stopping_patience": 3,   # Ile epok czekać na poprawę Val Loss przed przerwaniem
-        "early_stopping_min_delta": 0.01, # Minimalna zmiana Val Loss uznawana za poprawę
-        "use_early_stopping": False,    # Czy automatycznie przerywać naukę przy braku postępów
-        "scheduler_patience": 1,        # Ile epok czekać przed redukcją Learning Rate
+        "early_stopping_patience": 5,   # Ile epok czekać na poprawę Val Loss przed przerwaniem
+        "early_stopping_min_delta": 0.0001, # Minimalna zmiana Val Loss uznawana za poprawę
+        "use_early_stopping": True,    # Czy automatycznie przerywać naukę przy braku postępów
+        "scheduler_patience": 2,        # Ile epok czekać przed redukcją Learning Rate
         "scheduler_factor": 0.5,        # Współczynnik redukcji Learning Rate (np. z 0.0001 na 0.00005)
 
         # --- GRAD-CAM I ANALIZA WYJAŚNIALNOŚCI ---

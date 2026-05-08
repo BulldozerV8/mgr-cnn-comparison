@@ -24,7 +24,7 @@ class CSVLogger:
             "batch_size", "learning_rate", "label_smoothing", "head_depth", "head_width", "head_dropout",
             "aug_mode", "weather_prob", "aspect_ratio_mode", "num_samples",
             "use_cv", "fold", "epoch", "best_epoch", "train_loss", "train_acc", "val_loss", "val_acc",
-            "test_acc", "test_prec", "test_rec", "test_f1",
+            "test_acc", "test_prec", "test_rec", "test_f1", "ram_mb", "cpu_usage",
             "vram_mb", "params_count", "trainable_params", "model_size_mb", "inference_ms",
             "train_time_sec", "total_fold_time_sec"
         ]
@@ -86,6 +86,8 @@ class CSVLogger:
             f"{metrics.get('test_f1', 0):.4f}",
 
             # Monitorowanie zasobów sprzętowych i wydajności czasowej
+            f"{metrics.get('ram_mb', 0):.2f}",
+            f"{metrics.get('cpu_usage', 0):.2f}",
             f"{metrics.get('vram_mb', 0):.2f}",
             metrics.get("params_count", 0),
             metrics.get("trainable_params", 0),

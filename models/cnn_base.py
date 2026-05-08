@@ -10,7 +10,7 @@ class CNN(nn.Module):
     """
 
     def __init__(self, num_classes, model_name="efficientnet_b0", pretrained=True,
-                 head_depth=1, head_width=512, head_dropout=0.3, unfreeze_blocks=0):
+                 head_depth=1, head_width=512, head_dropout=0.3, unfreeze_blocks=0, pooling_mode="avg", differential_lr=False):
         """
         Inicjalizacja modelu z parametrami badawczymi.
 
@@ -29,6 +29,13 @@ class CNN(nn.Module):
             # 1. Ładowanie modelu i wag bazowych
             weights = models.EfficientNet_B0_Weights.DEFAULT if pretrained else None
             self.model = models.efficientnet_b0(weights=weights)
+
+            # 1a. Konfiguracja warstwy Poolingu (Global Pooling)
+            # Podmiana domyślnego Average Pooling na Max Pooling, jeśli wybrano w configu
+            if pooling_mode == "max":
+                self.model.avgpool = nn.AdaptiveMaxPool2d(1)  #
+            else:
+                self.model.avgpool = nn.AdaptiveAvgPool2d(1)  # Domyślny
 
             # 2. Mechanizm mrożenia/odmrażania (Fine-tuning)
             # Domyślnie mrozimy wszystkie parametry bazy, aby nie utracić wyuczonych cech
