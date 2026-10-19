@@ -5,8 +5,8 @@ import random
 # Ustawiamy ziarno losowości, żeby za każdym razem losowało tak samo
 random.seed(42)
 
-source_folder = "Dataset-small/"  # Ścieżka do Twojego obecnego folderu
-dest_folder = "Dataset-small-perfect/"  # Tu powstanie zbalansowana baza
+source_folder = "Aircraft-full-small/"  # Ścieżka do Twojego obecnego folderu
+dest_folder = "Aircraft-full-small-perfect/"  # Tu powstanie zbalansowana baza
 MAX_IMAGES = 400
 
 if not os.path.exists(dest_folder):
@@ -33,4 +33,4 @@ for cls in classes:
         dst = os.path.join(dest_cls_path, img)
         shutil.copy(src, dst)
 
-print("\nGotowe! Nowa baza znajduje się w folderze 'Dataset-perfect/'.")
+print("\nGotowe! Nowa baza znajduje się w folderze 'Aircraft-full-perfect/'.")

@@ -1,7 +1,13 @@
 import os
+import sys
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
+
+# --- KONIECZNA ZMIANA DLA IMPORTÓW ---
+# Dodajemy główny katalog projektu do ścieżki wyszukiwania modułów
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from prediction.predictor import Predictor
 from config import CONFIG
 
@@ -20,14 +26,19 @@ class PredictionGUI:
         self.root.configure(bg="#f0f0f0")
 
         # --- 1. Inicjalizacja Silnika ---
-        # Ścieżka do modelu pobierana automatycznie na podstawie CONFIG
-        test_folder = os.path.join("results", CONFIG["test_name"])
-        model_path = os.path.join(test_folder, "saved_models", "model_weights_fold_1.pth")
+        # Ścieżka do modelu: wychodzimy poziom wyżej (..), bo skrypt jest w podfolderze
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        #test_folder = os.path.join(project_root, "results", CONFIG["test_name"])
+        #model_path = os.path.join(project_root, "results/1_Final_testy_ptaki/FINAL_Ptaki_448px_CV5/saved_models/model_weights_fold_5.pth")
+        #model_path = os.path.join(project_root, "results/1_Final_testy_samoloty/FINAL_Samoloty_448px_CV5/saved_models/model_weights_fold_4.pth")
+        model_path = os.path.join(project_root, "results/Custom_Final_Ptaki_448px/saved_models/model_weights_fold_2.pth")
+        #model_path = os.path.join(project_root, "results/Custom_Final_Samoloty_448px/saved_models/model_weights_fold_5.pth")
+        #model_path = os.path.join(test_folder, "saved_models", "model_weights_fold_1.pth")
 
         try:
             self.predictor = Predictor(model_path, device=CONFIG["device"])
         except Exception as e:
-            tk.messagebox.showerror("Błąd inicjalizacji", f"Nie można załadować modelu:\n{e}")
+            messagebox.showerror("Błąd inicjalizacji", f"Nie można załadować modelu pod ścieżką:\n{model_path}\n\nBłąd: {e}")
             self.root.destroy()
             return
 
@@ -120,7 +131,7 @@ class PredictionGUI:
             self.log(f"Rozpoznano: {result['top_k'][0]['label']} ({result['top_k'][0]['confidence'] * 100:.1f}%)")
         else:
             self.log(f"BŁĄD: {result.get('message')}")
-            tk.messagebox.showerror("Błąd", result.get("message"))
+            messagebox.showerror("Błąd", result.get("message"))
 
 
 if __name__ == "__main__":

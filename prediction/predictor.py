@@ -38,8 +38,15 @@ class Predictor:
         self.model = CNN(
             num_classes=len(self.class_names),
             model_name=self.model_info["model_name"],
-            head_depth=self.model_info.get("head_depth", 1),
-            head_width=self.model_info.get("head_width", 512)
+            head_depth=self.model_info.get("head_depth", 3),
+            head_width=self.model_info.get("head_width", 256),
+            pooling_mode=self.model_info.get("pooling_mode", "avg"),
+            custom_base_channels=self.model_info.get("custom_base_channels", 32),
+            custom_block_repeats=self.model_info.get("custom_block_repeats", [3, 3, 4]),
+            use_se_block=self.model_info.get("use_se_block", True),
+            use_depthwise=self.model_info.get("use_depthwise", True),
+            kernel_size=self.model_info.get("kernel_size", 5),
+            expansion_ratio=self.model_info.get("expansion_ratio", 4)
         )
 
         # Bezpieczne ładowanie wag

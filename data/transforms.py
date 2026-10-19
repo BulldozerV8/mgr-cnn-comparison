@@ -111,6 +111,11 @@ class TransformFactory:
         Generuje minimalny potok transformacji dla fazy walidacji i testów.
         Zapewnia powtarzalność wyników poprzez brak operacji losowych.
         """
+        # Jeśli badamy odporność na pogodę, używamy WeatherTransformWrapper
+        if config.get("robustness_mode", False) and config.get("aug_mode") == "weather":
+            return WeatherTransformWrapper(config)
+
+        # Standardowy, czysty potok testowy
         t_list = []
         if config.get("aspect_ratio_mode") == "SquarePad":
             t_list.append(SquarePad())

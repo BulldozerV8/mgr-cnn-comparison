@@ -38,8 +38,11 @@ class ExperimentRunner:
         Gwarantuje, że logi, wagi modeli, wykresy i mapy ciepła są grupowane
         w jednym spójnym folderze roboczym (test_dir).
         """
+
+        base_results_dir = self.config.get("results_path", "results")
+
         # Główny folder testu: results/EffNet_Baseline_V1/
-        self.test_dir = os.path.join("results", self.config["test_name"])
+        self.test_dir = os.path.join(base_results_dir, self.config["test_name"])
         os.makedirs(self.test_dir, exist_ok=True)
 
         # 1. Ścieżka do CSV (dynamiczna)
@@ -154,7 +157,7 @@ class ExperimentRunner:
             cv_indices[train_idx], cv_indices[val_idx], test_idx
         )
 
-        # 2. Dataset Info (tylko w 1. foldzie)
+        # 2. Aircraft-full Info (tylko w 1. foldzie)
         if fold_num == 1:
             print(f"Wykryto klas: {num_classes}")
             print(f"Zbiór fizyczny (train): {len(train_idx)} zdjęć")
@@ -166,13 +169,7 @@ class ExperimentRunner:
         # 3. Model i Optimizer
         model = CNN(
             num_classes=num_classes,
-            model_name=self.config["model_name"],
-            pretrained=self.config["pretrained"],
-            head_depth=self.config.get("head_depth", 1),
-            head_width=self.config.get("head_width", 512),
-            head_dropout=self.config.get("head_dropout", 0.3),
-            unfreeze_blocks=self.config.get("unfreeze_blocks", 0),
-            pooling_mode=self.config.get("pooling_mode", "avg")
+            **self.config
         ).to(self.config["device"])
 
         criterion = nn.CrossEntropyLoss(label_smoothing=self.config["label_smoothing"])
@@ -198,7 +195,8 @@ class ExperimentRunner:
 
         # --- Wczytywanie wag (Robustness Mode) ---
         if self.config.get("robustness_mode", False):
-            path = self.config.get("trained_model_path")
+            path = os.path.join(self.test_dir, "saved_models", f"model_weights_fold_{fold_num}.pth")
+            #path = self.config.get("trained_model_path")
             if path and os.path.exists(path):
                 model.load_state_dict(torch.load(path))
                 print(f"[MODE] Tryb Odporności: Wczytano wagi. Pomijam trening.")
@@ -273,6 +271,10 @@ class ExperimentRunner:
             epoch_durations_sec = [0]
             if "cuda" in self.config["device"]:
                 vram_mb = torch.cuda.max_memory_allocated(self.config["device"]) / (1024 ** 2)
+
+        if os.path.exists(model_path):
+            model.load_state_dict(torch.load(model_path))
+            print(f"Wczytano najlepsze wagi z epoki {early_stopping.best_epoch} do testów.")
 
         # Oddelegowanie logiki ewaluacji do osobnej metody (poprawa czytelności)
         acc = self._evaluate_and_log_fold(

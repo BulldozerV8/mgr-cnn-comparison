@@ -1,6 +1,6 @@
 from torch import nn
 import torchvision.models as models
-
+from models.custom_model import MyCustomCNN
 
 class CNN(nn.Module):
     """
@@ -9,8 +9,13 @@ class CNN(nn.Module):
     Transfer Learning poprzez selektywne odmrażanie bloków bazy i dynamiczną budowę głowicy.
     """
 
+    # ZMIENIONO: Rozszerzono sygnaturę __init__ o nowe parametry, aby klasa główna mogła je przechwycić z CONFIG
     def __init__(self, num_classes, model_name="efficientnet_b0", pretrained=True,
-                 head_depth=1, head_width=512, head_dropout=0.3, unfreeze_blocks=0, pooling_mode="avg", differential_lr=False):
+                 head_depth=1, head_width=512, head_dropout=0.3, unfreeze_blocks=0, pooling_mode="avg",
+                 differential_lr=False, custom_base_channels=32, custom_block_repeats=[2, 2, 2],
+                 custom_activation="silu",
+                 use_se_block=True, se_reduction=16, use_depthwise=True, drop_path_rate=0.2,
+                 expansion_ratio=4, kernel_size=3, **kwargs):
         """
         Inicjalizacja modelu z parametrami badawczymi.
 
@@ -79,8 +84,13 @@ class CNN(nn.Module):
             self.last_conv_layer = self.model.features[-1]
 
         elif model_name == "my_custom_cnn":
-            # Miejsce na implementację autorskiej architektury (Krok 4 projektu)
-            pass
+            self.model = MyCustomCNN( in_channels=3, num_classes=num_classes, head_dropout=head_dropout, head_width=head_width,
+                                      head_depth=head_depth, pooling_mode=pooling_mode, custom_base_channels=custom_base_channels,
+                                      custom_block_repeats=custom_block_repeats, custom_activation=custom_activation, use_se_block=use_se_block,
+                                      se_reduction=se_reduction, use_depthwise=use_depthwise, drop_path_rate=drop_path_rate,
+                                      expansion_ratio=expansion_ratio, kernel_size=kernel_size
+                                    )
+            self.last_conv_layer = self.model.last_conv_layer
 
         elif model_name == "resnet18":
             # Alternatywna architektura bazowa - ResNet18
